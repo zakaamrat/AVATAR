@@ -64,101 +64,42 @@ html_template = """
     </div>
 
     <script type="module">
-  
-        import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-        // Placeholders replaced by Python
-        const genAI = new GoogleGenerativeAI("API_KEY_HERE");
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" });
+    const genAI = new GoogleGenerativeAI("API_KEY_HERE");
+    // Use the 2026 Ultra-Efficient Stable Model
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
-        let isSessionActive = false;
-        let chatHistory = [];
-        const video = document.getElementById('avatarVideo');
-        const status = document.getElementById('status');
-        const chatWindow = document.getElementById('chat-window');
+    let isSessionActive = false;
+    let lastCall = 0; // Cooldown timer
 
-        // Setup Voice Recognition
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'en-US';
-        recognition.continuous = false;
+    // ... (rest of your video and recognition setup) ...
 
-        window.toggleSession = function() {
-            if (!isSessionActive) {
-                isSessionActive = true;
-                document.getElementById('mainBtn').innerText = "Stop Mic";
-                document.getElementById('reportBtn').style.display = "block";
-                recognition.start();
+    recognition.onresult = async (event) => {
+        const now = Date.now();
+        if (now - lastCall < 2000) return; // Wait 2 seconds between requests
+        lastCall = now;
+
+        const prompt = event.results[0][0].transcript;
+        appendMsg("You", prompt);
+        
+        status.innerText = "Tutor is thinking...";
+        try {
+            const result = await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: "You are an English tutor for Omani students. Answer briefly: " + prompt }] }]
+            });
+            const text = result.response.text();
+            appendMsg("Tutor", text);
+            speak(text);
+        } catch (err) {
+            if (err.message.includes("429")) {
+                status.innerText = "Quota full. Wait 1 minute.";
             } else {
-                isSessionActive = false;
-                document.getElementById('mainBtn').innerText = "🚀 Resume";
-                recognition.stop();
+                status.innerText = "Error: " + err.message;
             }
-        };
-
-        recognition.onresult = async (event) => {
-            const prompt = event.results[0][0].transcript;
-            appendMsg("You", prompt);
-            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
-            
-            status.innerText = "Tutor is thinking...";
-            try {
-                const result = await model.generateContent({
-                    contents: chatHistory,
-                    systemInstruction: "You are an English tutor for Omani students. Use Case Studies. Keep spoken replies under 25 words. Correct grammar briefly."
-                });
-                const aiText = result.response.text();
-                chatHistory.push({ role: "model", parts: [{ text: aiText }] });
-                appendMsg("Tutor", aiText);
-                speak(aiText);
-            } catch (err) {
-                // This will print the actual error (like 403 Forbidden or 429 Too Many Requests)
-    status.innerText = "Error: " + err.message; 
-    console.error("Detailed Error:", err);
-            }
-        };
-
-        function speak(text) {
-            window.speechSynthesis.cancel();
-            const cleanText = text.replace(/[*#]/g, "");
-            const utter = new SpeechSynthesisUtterance(cleanText);
-            utter.rate = 0.8;
-            utter.onstart = () => { video.play(); status.innerText = "Speaking..."; };
-            utter.onend = () => { 
-                video.pause(); 
-                status.innerText = "Listening...";
-                if(isSessionActive) recognition.start(); 
-            };
-            window.speechSynthesis.speak(utter);
         }
-
-        window.generateReport = async function() {
-            status.innerText = "Creating PDF...";
-            const reportPrompt = "Create a SWOT analysis for this student based on our chat. Format: STRENGTHS, WEAKNESSES, OPPORTUNITIES, THREATS. Add a 1-week plan.";
-            try {
-                const result = await model.generateContent(reportPrompt + " Context: " + JSON.stringify(chatHistory));
-                const data = result.response.text();
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                doc.setFontSize(14);
-                doc.text("Shannaq Funding: Omani English Training Plan", 10, 20);
-                doc.setFontSize(10);
-                doc.text(doc.splitTextToSize(data, 180), 10, 30);
-                doc.save("English_Plan.pdf");
-                status.innerText = "Downloaded!";
-            } catch (e) { alert("PDF Error"); }
-        };
-
-        function appendMsg(who, txt) {
-            const d = document.createElement('div');
-            d.innerHTML = `<b>${who}:</b> ${txt}`;
-            d.style.marginBottom = "5px";
-            chatWindow.appendChild(d);
-            chatWindow.scrollTop = chatWindow.scrollHeight;
-        }
-
-        recognition.onend = () => { if(isSessionActive && !window.speechSynthesis.speaking) recognition.start(); };
-    </script>
+    };
+</script>
 </body>
 </html>
 """
