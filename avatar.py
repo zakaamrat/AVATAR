@@ -51,52 +51,55 @@ html_code = f"""
         <button id="mainBtn" onclick="toggleSession()">🚀 Start Tutor</button>
     </div>
 
-    <script type="module">
-        // Using the definitive browser-ready version of the SDK
-        import {{ GoogleGenerativeAI }} from "https://esm.run/@google/generative-ai";
+   <script type="module">
+        import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
         const genAI = new GoogleGenerativeAI("{gemini_key}");
-        const model = genAI.getGenerativeModel({{ model: "gemini-1.5-flash" }});
+        // Updated to the 2026 stable model ID
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
         let isSessionActive = false;
         const video = document.getElementById('avatarVideo');
         const chatWindow = document.getElementById('chat-window');
 
-        // Recognition Setup
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
         recognition.lang = 'en-US';
 
-        window.toggleSession = function() {{
-            if (!isSessionActive) {{
+        window.toggleSession = function() {
+            if (!isSessionActive) {
                 isSessionActive = true;
                 document.getElementById('mainBtn').innerText = "Stop Session";
                 recognition.start();
-            }} else {{
+            } else {
                 isSessionActive = false;
                 document.getElementById('mainBtn').innerText = "🚀 Start Tutor";
                 recognition.stop();
-            }}
-        }};
+            }
+        };
 
-        recognition.onresult = async (event) => {{
+        recognition.onresult = async (event) => {
             const prompt = event.results[0][0].transcript;
             appendMsg("You", prompt);
             
-            document.getElementById('status').innerText = "Tutor is thinking...";
+            document.getElementById('status').innerText = "Thinking...";
 
-            try {{
+            try {
+                // Simplified call for better reliability in 2026 SDK
                 const result = await model.generateContent("You are an English tutor for Omani students. Answer briefly and correct this: " + prompt);
                 const response = await result.response;
                 const text = response.text();
                 
                 appendMsg("Tutor", text);
                 speak(text);
-            }} catch (err) {{
-                document.getElementById('status').innerText = "Error: " + err.message;
-                console.error(err);
-            }}
-        }};
+            } catch (err) {
+                document.getElementById('status').innerText = "Error: Model not found or API issue.";
+                console.error("Full Error:", err);
+            }
+        };
+
+        // ... keep the rest of your speak and appendMsg functions the same ...
+    </script>
 
         function speak(text) {{
             window.speechSynthesis.cancel();
