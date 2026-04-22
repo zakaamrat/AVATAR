@@ -64,11 +64,12 @@ html_template = """
     </div>
 
     <script type="module">
+  
         import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
         // Placeholders replaced by Python
         const genAI = new GoogleGenerativeAI("API_KEY_HERE");
-        const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let isSessionActive = false;
         let chatHistory = [];
@@ -111,8 +112,9 @@ html_template = """
                 appendMsg("Tutor", aiText);
                 speak(aiText);
             } catch (err) {
-                status.innerText = "Error: Model Connection Failed";
-                console.error(err);
+                // This will print the actual error (like 403 Forbidden or 429 Too Many Requests)
+    status.innerText = "Error: " + err.message; 
+    console.error("Detailed Error:", err);
             }
         };
 
