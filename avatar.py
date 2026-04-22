@@ -39,7 +39,7 @@ html_code = f"""
     <div class="funding-notice">This work is funded by Shannaq</div>
     <div class="container">
         <div id="avatar-container">
-            <video id="avatarVideo" src="omaniavata.mp4" loop muted playsinline></video>
+            <video id="avatarVideo" src="https://github.com/zakaamrat/AVATAR/blob/main/omaniavata.mp4" loop muted playsinline></video>
         </div>
         <div id="status" style="font-size:0.8em; margin-bottom:10px; color:#38bdf8;">Ready to start...</div>
         <div id="chat-window"></div>
