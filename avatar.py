@@ -62,7 +62,7 @@ html_template = """
 
         const genAI = new GoogleGenerativeAI("MY_KEY");
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-3.1-flash-lite-preview",
+            model: "gemini-1.5-flash-latest",
             systemInstruction: "You are an English tutor for Omani students. Use a Case Study approach. Keep replies under 20 words. Correct grammar gently."
         });
 
