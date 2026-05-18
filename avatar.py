@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components  # <-- Fixed: Added this missing import!
 import base64
 import os
 from google import genai
