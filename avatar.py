@@ -23,7 +23,7 @@ def get_video_base64(file_path):
 video_base64 = get_video_base64("omaniavata.mp4")
 video_src = f"data:video/mp4;base64,{video_base64}" if video_base64 else ""
 
-# --- 3. SESSION STATE FOR CHAT ---
+# --- 3. SESSION STATE FOR CHAT & SYNC ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_ai_response" not in st.session_state:
@@ -42,9 +42,6 @@ st.markdown(f"""
     .user-txt {{ color: #38bdf8; margin-bottom: 5px; }}
     .ai-txt {{ color: #f1f5f9; margin-bottom: 10px; border-bottom: 1px solid #334155; padding-bottom: 5px; }}
     .funding {{ font-size: 0.7em; color: #64748b; text-align: center; margin-bottom: 5px;}}
-    
-    /* Completely hide Streamlit's structural widget borders around our bridge */
-    div[data-testid="stForm"] {{ border: none !important; padding: 0 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,17 +58,15 @@ container_html = f"""
 """
 st.markdown(container_html, unsafe_allow_html=True)
 
-# --- 5. THE AUTOMATED DATA BRIDGE ---
-# We use a native Streamlit form with a hidden text input that JavaScript can submit automatically
-with st.form(key="speech_form", clear_on_submit=True):
-    # This input acts as our data pipeline catcher
-    user_voice_transcript = st.text_input("Hidden Voice Input", key="hidden_voice", label_visibility="collapsed")
-    submit_button = st.form_submit_with_no_label = st.form_submit_button(label="Processing...", help="Hidden submit trigger")
-
-# If text enters our hidden form, Python immediately processes it safely server-to-server
-if user_voice_transcript:
-    st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_voice_transcript}]})
-    with st.spinner("Tutor is thinking..."):
+# --- 5. THE DIRECT PYTHON PIPELINE ---
+# This looks for incoming transcripts sent from our customized JavaScript component below
+query_params = st.query_params
+if "voice_payload" in query_params:
+    user_voice_transcript = query_params["voice_payload"]
+    st.query_params.clear() # Prevent processing loop on refresh
+    
+    if user_voice_transcript.strip():
+        st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_voice_transcript}]})
         try:
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
@@ -82,7 +77,8 @@ if user_voice_transcript:
             st.session_state.last_ai_response = ai_text
             st.session_state.chat_history.append({"role": "model", "parts": [{"text": ai_text}]})
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error calling Gemini: {e}")
+        st.rerun()
 
 # --- 6. CHAT HISTORY DISPLAY ---
 st.write("### 💬 Conversation Log")
@@ -94,8 +90,7 @@ for msg in st.session_state.chat_history:
     st.markdown(f'<div class="{role_class}"><b>{role_name}:</b> {text_content}</div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 7. CONTINUOUS HANDS-FREE JAVASCRIPT CONTROLLER ---
-# This controller handles continuous microphone listening and plays back audio smoothly without breaking
+# --- 7. STABLE BROWSER-BACKEND CONTINUOUS JAVASCRIPT ---
 js_interface = f"""
 <div style="text-align:center;">
     <button id="mBtn" style="padding: 12px 30px; background:#22c55e; color:white; border-radius:12px; border:none; font-weight:bold; cursor:pointer;" onclick="toggleSession()">🎙️ Start Continuous Session</button>
@@ -111,7 +106,7 @@ js_interface = f"""
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     const rec = new Speech();
     rec.lang = 'en-US';
-    rec.continuous = false; // We use explicit single-turn triggers linked with TTS hooks for total stability
+    rec.continuous = false; 
 
     window.toggleSession = () => {{
         if (!active) {{
@@ -138,37 +133,20 @@ js_interface = f"""
 
     rec.onresult = (e) => {{
         const msg = e.results[0][0].transcript;
-        s.innerText = "Processing speech...";
+        s.innerText = "Sending payload securely...";
         
-        // Find Streamlit's native input field outside the iframe and insert the text
-        const inputs = parent.document.getElementsByTagName('input');
-        if(inputs.length > 0) {{
-            inputs[0].value = msg;
-            inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
-            
-            // Find the hidden form's submit button and click it automatically
-            setTimeout(() => {{
-                const buttons = parent.document.getElementsByTagName('button');
-                for(let b of buttons) {{
-                    if(b.innerText === "Processing...") {{
-                        b.click();
-                        break;
-                    }}
-                }}
-            }}, 200);
-        }}
+        // INSTANTLY SUBMIT DIRECTLY TO THE STREAMLIT SERVER ROOT (SAFE FROM RACING ISSUES)
+        parent.window.location.href = window.parent.location.pathname + '?voice_payload=' + encodeURIComponent(msg);
     }};
 
-    // Fallback automated recovery loop if the student goes silent
     rec.onend = () => {{
         if(active && !isSpeaking) {{
-            setTimeout(startListening, 400);
+            setTimeout(startListening, 300);
         }}
     }};
 
-    // Automatically check for incoming responses on page update
     window.addEventListener('load', () => {{
-        const lastResponse = "{st.session_state.last_ai_response.replace('"', "'").replace('\\n', ' ')}";
+        const lastResponse = "{st.session_state.last_ai_response.replace('"', "'").replace('\\n', ' ').strip()}";
         if(lastResponse && lastResponse !== "Hello! Click Start Session once, and we can just talk freely.") {{
             talk(lastResponse);
         }}
