@@ -1,9 +1,8 @@
 import streamlit as st
-import streamlit.components.v1 as components  # <-- Fixed: Added this missing import!
+import streamlit.components.v1 as components
 import base64
 import os
 from google import genai
-from streamlit_mic_recorder import mic_recorder
 
 st.set_page_config(page_title="Omani AI Tutor", layout="centered")
 
@@ -28,7 +27,7 @@ video_src = f"data:video/mp4;base64,{video_base64}" if video_base64 else ""
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_ai_response" not in st.session_state:
-    st.session_state.last_ai_response = "Hello! Click the record button below to speak to me."
+    st.session_state.last_ai_response = "Hello! Click Start Session once, and we can just talk freely."
 
 client = genai.Client(api_key=gemini_key)
 
@@ -43,6 +42,9 @@ st.markdown(f"""
     .user-txt {{ color: #38bdf8; margin-bottom: 5px; }}
     .ai-txt {{ color: #f1f5f9; margin-bottom: 10px; border-bottom: 1px solid #334155; padding-bottom: 5px; }}
     .funding {{ font-size: 0.7em; color: #64748b; text-align: center; margin-bottom: 5px;}}
+    
+    /* Completely hide Streamlit's structural widget borders around our bridge */
+    div[data-testid="stForm"] {{ border: none !important; padding: 0 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,74 +61,150 @@ container_html = f"""
 """
 st.markdown(container_html, unsafe_allow_html=True)
 
-# --- 5. AUDIO INPUT & BACKEND PROCESSING ---
-st.write("")
-audio_data = mic_recorder(
-    start_prompt="🚀 Start Speaking",
-    stop_prompt="🛑 Stop & Send to Tutor",
-    key='tutor_mic'
-)
+# --- 5. THE AUTOMATED DATA BRIDGE ---
+# We use a native Streamlit form with a hidden text input that JavaScript can submit automatically
+with st.form(key="speech_form", clear_on_submit=True):
+    # This input acts as our data pipeline catcher
+    user_voice_transcript = st.text_input("Hidden Voice Input", key="hidden_voice", label_visibility="collapsed")
+    submit_button = st.form_submit_with_no_label = st.form_submit_button(label="Processing...", help="Hidden submit trigger")
 
-if audio_data:
-    with st.spinner("Tutor is listening and preparing response..."):
+# If text enters our hidden form, Python immediately processes it safely server-to-server
+if user_voice_transcript:
+    st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_voice_transcript}]})
+    with st.spinner("Tutor is thinking..."):
         try:
-            # Package the user speech bytes directly to Gemini Multimodal
-            audio_part = genai.types.Part.from_bytes(
-                data=audio_data['bytes'],
-                mime_type="audio/wav"
-            )
-            
-            # Send context history and fresh voice stream directly to Gemini
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=[
-                    "System instruction: You are an expert English tutor for Omani students. Use a Case Study approach. Keep replies under 20 words. Correct grammar gently.",
-                    audio_part
-                ]
+                contents=st.session_state.chat_history,
+                config={"system_instruction": "You are an English tutor for Omani students. Use a Case Study approach. Keep replies under 20 words. Correct grammar gently."}
             )
-            
-            # Extract Text and update history
             ai_text = response.text
             st.session_state.last_ai_response = ai_text
-            st.session_state.chat_history.append({"role": "You", "text": "🗣️ Sent voice message"})
-            st.session_state.chat_history.append({"role": "Tutor", "text": ai_text})
-            
+            st.session_state.chat_history.append({"role": "model", "parts": [{"text": ai_text}]})
         except Exception as e:
-            st.error(f"Connection Exception: {e}")
+            st.error(f"Error: {e}")
 
 # --- 6. CHAT HISTORY DISPLAY ---
 st.write("### 💬 Conversation Log")
-chat_placeholder = st.empty()
-with chat_placeholder.container():
-    st.markdown('<div class="chat-box">', unsafe_allow_html=True)
-    for msg in st.session_state.chat_history:
-        cls = "user-txt" if msg["role"] == "You" else "ai-txt"
-        st.markdown(f'<div class="{cls}"><b>{msg["role"]}:</b> {msg["text"]}</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('<div class="chat-box">', unsafe_allow_html=True)
+for msg in st.session_state.chat_history:
+    role_class = "user-txt" if msg["role"] == "user" else "ai-txt"
+    role_name = "You" if msg["role"] == "user" else "Tutor"
+    text_content = msg["parts"][0]["text"]
+    st.markdown(f'<div class="{role_class}"><b>{role_name}:</b> {text_content}</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 7. BROWSER TEXT TO SPEECH AUDIO TRIGGER ---
-# This injects clean JS execution to read the latest response text out loud and animate your video profile
-js_speech_trigger = f"""
+# --- 7. CONTINUOUS HANDS-FREE JAVASCRIPT CONTROLLER ---
+# This controller handles continuous microphone listening and plays back audio smoothly without breaking
+js_interface = f"""
+<div style="text-align:center;">
+    <button id="mBtn" style="padding: 12px 30px; background:#22c55e; color:white; border-radius:12px; border:none; font-weight:bold; cursor:pointer;" onclick="toggleSession()">🎙️ Start Continuous Session</button>
+    <div id="status" style="color: #38bdf8; font-size: 0.85em; margin-top: 10px;">Click above to turn on hands-free mode</div>
+</div>
+
 <script>
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance("{st.session_state.last_ai_response.replace('"', "'")}");
-    utterance.rate = 0.9;
-    
-    utterance.onstart = () => {{
-        const vids = parent.document.getElementsByTagName('video');
-        for(let v of vids) {{ v.play(); }}
+    let active = false;
+    let isSpeaking = false;
+    const s = document.getElementById('status');
+    const mBtn = document.getElementById('mBtn');
+
+    const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new Speech();
+    rec.lang = 'en-US';
+    rec.continuous = false; // We use explicit single-turn triggers linked with TTS hooks for total stability
+
+    window.toggleSession = () => {{
+        if (!active) {{
+            active = true;
+            mBtn.innerText = "🛑 Stop Continuous Session";
+            mBtn.style.background = "#ef4444";
+            startListening();
+        }} else {{
+            active = false;
+            isSpeaking = false;
+            mBtn.innerText = "🎙️ Start Continuous Session";
+            mBtn.style.background = "#22c55e";
+            s.innerText = "Session Stopped.";
+            rec.stop();
+            window.speechSynthesis.cancel();
+        }}
     }};
-    utterance.onend = () => {{
-        const vids = parent.document.getElementsByTagName('video');
-        for(let v of vids) {{ v.pause(); }}
+
+    function startListening() {{
+        if(!active || isSpeaking) return;
+        s.innerText = "Listening... Speak now!";
+        try {{ rec.start(); }} catch(e) {{}}
+    }}
+
+    rec.onresult = (e) => {{
+        const msg = e.results[0][0].transcript;
+        s.innerText = "Processing speech...";
+        
+        // Find Streamlit's native input field outside the iframe and insert the text
+        const inputs = parent.document.getElementsByTagName('input');
+        if(inputs.length > 0) {{
+            inputs[0].value = msg;
+            inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+            
+            // Find the hidden form's submit button and click it automatically
+            setTimeout(() => {{
+                const buttons = parent.document.getElementsByTagName('button');
+                for(let b of buttons) {{
+                    if(b.innerText === "Processing...") {{
+                        b.click();
+                        break;
+                    }}
+                }}
+            }}, 200);
+        }}
     }};
-    
-    window.speechSynthesis.speak(utterance);
+
+    // Fallback automated recovery loop if the student goes silent
+    rec.onend = () => {{
+        if(active && !isSpeaking) {{
+            setTimeout(startListening, 400);
+        }}
+    }};
+
+    // Automatically check for incoming responses on page update
+    window.addEventListener('load', () => {{
+        const lastResponse = "{st.session_state.last_ai_response.replace('"', "'").replace('\\n', ' ')}";
+        if(lastResponse && lastResponse !== "Hello! Click Start Session once, and we can just talk freely.") {{
+            talk(lastResponse);
+        }}
+    }});
+
+    function talk(text) {{
+        isSpeaking = true;
+        rec.stop();
+        window.speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        
+        utterance.onstart = () => {{
+            s.innerText = "Tutor is speaking...";
+            const vids = parent.document.getElementsByTagName('video');
+            for(let v of vids) {{ v.play(); }}
+        }};
+        
+        utterance.onend = () => {{
+            const vids = parent.document.getElementsByTagName('video');
+            for(let v of vids) {{ v.pause(); }}
+            isSpeaking = false;
+            if(active) {{
+                setTimeout(startListening, 300);
+            }}
+        }};
+        
+        window.speechSynthesis.speak(utterance);
+    }}
 </script>
 """
-components.html(js_speech_trigger, height=0, width=0)
+components.html(js_interface, height=100)
 
 # --- 8. EXPORT REPORT FUNCTION ---
+st.write("")
 if st.button("📄 Generate Progress Report"):
     st.success("Creating SWOT analysis based on session performance...")
     if len(st.session_state.chat_history) > 0:
