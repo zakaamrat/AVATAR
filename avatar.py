@@ -61,12 +61,14 @@ html_template = """
         import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
         const genAI = new GoogleGenerativeAI("MY_KEY");
+        // FIX 1: Switched to the modern, active gemini-2.5-flash model
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash-latest",
+            model: "gemini-2.5-flash",
             systemInstruction: "You are an English tutor for Omani students. Use a Case Study approach. Keep replies under 20 words. Correct grammar gently."
         });
 
         let active = false;
+        let isSpeaking = false; // Guard flag to fix ghost recording crashes
         let history = [];
         const v = document.getElementById('v');
         const s = document.getElementById('status');
@@ -75,6 +77,7 @@ html_template = """
         const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
         const rec = new Speech();
         rec.lang = 'en-US';
+        rec.continuous = false; // Let it process turn-by-turn cleanly
 
         window.run = () => {
             if (!active) {
@@ -115,8 +118,21 @@ html_template = """
             window.speechSynthesis.cancel();
             const u = new SpeechSynthesisUtterance(t.replace(/[*#]/g, ""));
             u.rate = 0.9;
-            u.onstart = () => { v.play(); s.innerText = "Tutor Speaking..."; };
-            u.onend = () => { v.pause(); s.innerText = "Listening..."; if(active) rec.start(); };
+            
+            u.onstart = () => { 
+                isSpeaking = true;
+                v.play(); 
+                s.innerText = "Tutor Speaking..."; 
+            };
+            
+            u.onend = () => { 
+                v.pause(); 
+                isSpeaking = false;
+                s.innerText = "Listening..."; 
+                if(active) {
+                    try { rec.start(); } catch(e){}
+                }
+            };
             window.speechSynthesis.speak(u);
         }
 
@@ -140,7 +156,12 @@ html_template = """
             c.scrollTop = c.scrollHeight;
         }
 
-        rec.onend = () => { if(active && !window.speechSynthesis.speaking) rec.start(); };
+        // FIX 2: Stabilized microphone tracking logic
+        rec.onend = () => { 
+            if(active && !isSpeaking && !window.speechSynthesis.speaking) {
+                try { rec.start(); } catch(e){}
+            } 
+        };
     </script>
 </body>
 </html>
