@@ -1,4 +1,5 @@
-import streamlit as st
+
+      import streamlit as st
 import streamlit.components.v1 as components
 import base64
 import os
@@ -32,7 +33,10 @@ html_template = """
         body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; text-align: center; margin: 0; }
         .container { width: 95%; max-width: 420px; margin: 20px auto; background: #1e293b; padding: 25px; border-radius: 28px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
         #avatar-box { width: 150px; height: 150px; border-radius: 50%; overflow: hidden; margin: 0 auto 15px; border: 4px solid #38bdf8; background: #000; }
-        video { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* FIXED: Changed from 'cover' to 'contain' and added scale to fit the face safely */
+        video { width: 100%; height: 100%; object-fit: contain; transform: scale(1.05); }
+        
         #chat { height: 160px; overflow-y: auto; background: #0f172a; padding: 15px; border-radius: 12px; margin-bottom: 15px; text-align: left; font-size: 0.9em; border: 1px solid #334155; }
         .controls { display: flex; gap: 10px; justify-content: center; }
         button { padding: 12px 20px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
